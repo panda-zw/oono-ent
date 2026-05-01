@@ -1,0 +1,17 @@
+[package]
+name = "vsock-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "vsock-bridge"
+path = "src/main.rs"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+vsock = "0.5"

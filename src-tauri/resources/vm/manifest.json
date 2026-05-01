@@ -1,0 +1,16 @@
+{
+  "version": "20260430",
+  "kernel": "kernel",
+  "initrd": "initrd",
+  "rootfs": "rootfs.img",
+  "rootfs_sha256": "31f09f1fa0659a851dee9af9b3060409803208daa47ddd3bba7ecc2b004113f2",
+  "kernel_sha256": "c1d58c18ad714d80c79c14cf1536a3287358b24d150c3bec9bed4492bdaac6af",
+  "initrd_sha256": "a1c35817b493a692e487d88550692e263e010ec7a73c742d552816a566715344",
+  "kernel_cmdline": "console=hvc0 root=/dev/vda rw init=/oono-arm64/init.sh quiet",
+  "engine_port": 6878,
+  "memory_mb": 2048,
+  "cpus": 2,
+  "platform_kernel": "linux/arm64",
+  "rosetta_required_on_apple_silicon": true,
+  "rosetta_share_tag": "rosetta"
+}
