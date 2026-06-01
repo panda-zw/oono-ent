@@ -762,26 +762,24 @@ pub fn build_embed_url(
     season: Option<i64>,
     episode: Option<i64>,
 ) -> String {
+    let s = season.unwrap_or(1);
+    let e = episode.unwrap_or(1);
     match (provider, kind) {
-        ("vidsrc", "movie") => format!("https://vidsrc.xyz/embed/movie?tmdb={tmdb_id}"),
-        ("vidsrc", "tv") => format!(
-            "https://vidsrc.xyz/embed/tv?tmdb={tmdb_id}&season={}&episode={}",
-            season.unwrap_or(1),
-            episode.unwrap_or(1)
-        ),
+        // vidsrc.xyz went offline; vidsrc.to is the active mirror and uses a
+        // path-style URL instead of query params.
+        ("vidsrc", "movie") => format!("https://vidsrc.to/embed/movie/{tmdb_id}"),
+        ("vidsrc", "tv") => format!("https://vidsrc.to/embed/tv/{tmdb_id}/{s}/{e}"),
         ("2embed", "movie") => format!("https://www.2embed.cc/embed/{tmdb_id}"),
-        ("2embed", "tv") => format!(
-            "https://www.2embed.cc/embedtv/{tmdb_id}?s={}&e={}",
-            season.unwrap_or(1),
-            episode.unwrap_or(1)
-        ),
-        ("autoembed", "movie") => format!("https://player.autoembed.cc/embed/movie/{tmdb_id}"),
-        ("autoembed", "tv") => format!(
-            "https://player.autoembed.cc/embed/tv/{tmdb_id}/{}/{}",
-            season.unwrap_or(1),
-            episode.unwrap_or(1)
-        ),
-        _ => format!("https://vidsrc.xyz/embed/{kind}?tmdb={tmdb_id}"),
+        ("2embed", "tv") => format!("https://www.2embed.cc/embedtv/{tmdb_id}?s={s}&e={e}"),
+        // player.autoembed.cc is also dead; autoembed.co is the live alternate
+        // and uses tmdb/{id} and tmdb/{id}-S-E paths.
+        ("autoembed", "movie") => format!("https://autoembed.co/movie/tmdb/{tmdb_id}"),
+        ("autoembed", "tv") => {
+            format!("https://autoembed.co/tv/tmdb/{tmdb_id}-{s}-{e}")
+        }
+        ("vidlink", "movie") => format!("https://vidlink.pro/movie/{tmdb_id}"),
+        ("vidlink", "tv") => format!("https://vidlink.pro/tv/{tmdb_id}/{s}/{e}"),
+        _ => format!("https://vidsrc.to/embed/{kind}/{tmdb_id}"),
     }
 }
 

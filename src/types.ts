@@ -301,7 +301,7 @@ export type ContinueWatchingEntry = {
   provider: string | null;
 };
 
-export type EmbedProvider = "vidsrc" | "2embed" | "autoembed";
+export type EmbedProvider = "vidsrc" | "2embed" | "autoembed" | "vidlink";
 
 export type WatchlistEntry = {
   id: string;

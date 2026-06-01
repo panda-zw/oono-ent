@@ -34,6 +34,7 @@ const PROVIDERS: { id: EmbedProvider; label: string }[] = [
   { id: "vidsrc", label: "VidSrc" },
   { id: "2embed", label: "2Embed" },
   { id: "autoembed", label: "AutoEmbed" },
+  { id: "vidlink", label: "VidLink" },
 ];
 
 export function VodPersistent() {
@@ -398,9 +399,16 @@ export function VodPersistent() {
             ref={iframeRef}
             key={embedUrl.data}
             src={embedUrl.data}
-            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+            // Embed providers (2Embed in particular) probe the iframe's
+            // restriction context and refuse playback if they detect a
+            // limited/sandboxed environment. We deliberately:
+            //  - omit `sandbox` so all default permissions stay granted,
+            //  - drop the `referrerPolicy="origin"` we used to set (it made
+            //    the provider see only `tauri://localhost` as referrer,
+            //    which their fraud-detection treats as suspicious),
+            //  - widen `allow` to cover the features modern players expect.
+            allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write; web-share; accelerometer; gyroscope"
             allowFullScreen
-            referrerPolicy="origin"
             className="absolute inset-0 h-full w-full"
           />
         ) : (
