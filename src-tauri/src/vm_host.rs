@@ -99,23 +99,42 @@ pub fn maybe_spawn(_app: &tauri::AppHandle, _state: Arc<AppState>) -> Result<Opt
 
 #[allow(dead_code)]
 fn locate_sidecar(app: &tauri::AppHandle) -> Result<std::path::PathBuf> {
-    let resource = app
+    // Tauri's `externalBin: ["binaries/oono-vm-host"]` config places the
+    // bundled sidecar at `Contents/MacOS/oono-vm-host` — NEXT TO the main
+    // binary, with no `binaries/` subfolder and no arch suffix. The two
+    // probes below match that layout and the dev layout (where the source
+    // binaries live in `src-tauri/binaries/oono-vm-host-{arch}-apple-darwin`).
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(macos_dir) = exe.parent() {
+            let bundled = macos_dir.join("oono-vm-host");
+            if bundled.exists() {
+                return Ok(bundled);
+            }
+        }
+    }
+
+    // As a fallback, ask Tauri for the resolved sidecar path. With Tauri 2
+    // some build profiles place it under Resources rather than MacOS.
+    if let Ok(path) = app
         .path()
-        .resolve("binaries/oono-vm-host", tauri::path::BaseDirectory::Resource);
-    if let Ok(path) = resource {
+        .resolve("binaries/oono-vm-host", tauri::path::BaseDirectory::Resource)
+    {
         if path.exists() {
             return Ok(path);
         }
     }
-    // Dev: from `cargo run` the binaries/ folder sits next to Cargo.toml.
-    let dev = std::env::current_dir()
-        .map(|p| p.join("binaries/oono-vm-host-aarch64-apple-darwin"))
-        .ok();
-    if let Some(p) = dev {
-        if p.exists() {
-            return Ok(p);
+
+    // Dev: cargo runs from src-tauri/, sidecar is the arch-suffixed source
+    // binary in src-tauri/binaries/.
+    if let Ok(cwd) = std::env::current_dir() {
+        for arch in ["aarch64", "x86_64"] {
+            let p = cwd.join(format!("binaries/oono-vm-host-{arch}-apple-darwin"));
+            if p.exists() {
+                return Ok(p);
+            }
         }
     }
+
     Err(anyhow!("oono-vm-host sidecar not found"))
 }
 

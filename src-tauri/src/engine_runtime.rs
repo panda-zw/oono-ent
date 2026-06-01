@@ -77,8 +77,50 @@ pub fn detect_driver() -> DriverKind {
 #[cfg(target_os = "macos")]
 fn bundled_vm_available() -> bool {
     use std::path::PathBuf;
+
+    // We have to find the rootfs and sidecar without an AppHandle (this runs
+    // before Tauri's AppState exists). Two layouts to support:
+    //
+    //   • Dev (`pnpm tauri dev`):
+    //       cwd            = .../src-tauri
+    //       binary         = .../src-tauri/target/{debug,release}/iptv-app
+    //       sidecar        = src-tauri/binaries/oono-vm-host-{arch}-apple-darwin
+    //       rootfs         = src-tauri/resources/vm/rootfs.img
+    //
+    //   • Production .app (the bundle Tauri ships):
+    //       cwd            = / (set by Finder/LaunchServices)
+    //       binary         = Oono Ent.app/Contents/MacOS/iptv-app
+    //       sidecar        = Oono Ent.app/Contents/MacOS/oono-vm-host
+    //       rootfs         = Oono Ent.app/Contents/Resources/resources/vm/rootfs.img
+    //
+    // Probe both. As long as ONE pair exists we're good.
+
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let sidecar = cwd.join("binaries/oono-vm-host-aarch64-apple-darwin");
-    let rootfs = cwd.join("resources/vm/rootfs.img");
-    sidecar.exists() && rootfs.exists()
+    let dev_sidecar_arm = cwd.join("binaries/oono-vm-host-aarch64-apple-darwin");
+    let dev_sidecar_x86 = cwd.join("binaries/oono-vm-host-x86_64-apple-darwin");
+    let dev_rootfs = cwd.join("resources/vm/rootfs.img");
+    if (dev_sidecar_arm.exists() || dev_sidecar_x86.exists()) && dev_rootfs.exists() {
+        return true;
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        // .app bundle: <bundle>/Contents/MacOS/iptv-app
+        if let Some(macos_dir) = exe.parent() {
+            // Sidecar lives next to the main binary in Contents/MacOS.
+            let bundled_sidecar = macos_dir.join("oono-vm-host");
+            if let Some(contents_dir) = macos_dir.parent() {
+                // Resources live in <bundle>/Contents/Resources/resources/vm.
+                let bundled_rootfs = contents_dir
+                    .join("Resources")
+                    .join("resources")
+                    .join("vm")
+                    .join("rootfs.img");
+                if bundled_sidecar.exists() && bundled_rootfs.exists() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
