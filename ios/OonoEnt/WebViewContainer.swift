@@ -83,6 +83,70 @@ struct WebViewContainer: UIViewRepresentable {
         config.userContentController.addUserScript(bridgeScript)
         config.userContentController.add(context.coordinator, name: "console")
 
+        // Auto-PiP injector — runs in EVERY frame (including the
+        // cross-origin VidSrc / 2Embed / VidLink iframes) and tags any
+        // <video> element with the attributes iOS needs to auto-PiP the
+        // app on background. Without this, swiping home from a movie just
+        // pauses playback because the embed provider's <video> doesn't
+        // ship `autopictureinpicture` itself.
+        let pipScript = WKUserScript(
+            source: """
+            (function(){
+              function tag(v){
+                if (!v || v.__oonoPip) return;
+                v.__oonoPip = true;
+                try {
+                  v.setAttribute('autopictureinpicture','');
+                  v.setAttribute('playsinline','');
+                  v.setAttribute('webkit-playsinline','');
+                  v.setAttribute('x-webkit-airplay','allow');
+                  v.disablePictureInPicture = false;
+                } catch(_) {}
+              }
+              function scan(root){
+                try {
+                  (root.querySelectorAll ? root.querySelectorAll('video') : [])
+                    .forEach(tag);
+                } catch(_) {}
+              }
+              scan(document);
+              try {
+                var mo = new MutationObserver(function(ms){
+                  for (var i=0;i<ms.length;i++){
+                    var n = ms[i].addedNodes;
+                    for (var j=0;j<n.length;j++){
+                      var el = n[j];
+                      if (!el || el.nodeType !== 1) continue;
+                      if (el.tagName === 'VIDEO') tag(el);
+                      else scan(el);
+                    }
+                  }
+                });
+                mo.observe(document.documentElement || document, { childList:true, subtree:true });
+              } catch(_) {}
+              // When the page hides (app backgrounded), nudge the active
+              // <video> into PiP. iOS auto-PiP needs the attribute we set
+              // above, but some embed players also need this explicit
+              // request to actually pop the floating window.
+              document.addEventListener('visibilitychange', function(){
+                if (document.visibilityState !== 'hidden') return;
+                var vids = document.querySelectorAll('video');
+                for (var i=0;i<vids.length;i++){
+                  var v = vids[i];
+                  if (v.paused || v.ended) continue;
+                  if (typeof v.requestPictureInPicture === 'function') {
+                    v.requestPictureInPicture().catch(function(){});
+                    break;
+                  }
+                }
+              });
+            })();
+            """,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: false
+        )
+        config.userContentController.addUserScript(pipScript)
+
         // Host the React build under an `oono-app://` scheme so modules
         // get a real (non-opaque) origin — type="module" scripts won't load
         // from file:// once Vite stamps a crossorigin attribute on them.
