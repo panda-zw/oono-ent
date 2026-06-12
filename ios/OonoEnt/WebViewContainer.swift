@@ -2,7 +2,7 @@ import SwiftUI
 import WebKit
 import os
 
-private let webLog = Logger(subsystem: "com.oono.ent.ios", category: "webview")
+private let webLog = Logger(subsystem: "com.panashemapika.oono-ent", category: "webview")
 
 struct WebViewContainer: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }

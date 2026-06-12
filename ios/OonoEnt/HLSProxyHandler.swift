@@ -20,13 +20,28 @@ final class HLSProxyHandler: NSObject, WKURLSchemeHandler {
     private let delegate: ProxyDelegate
 
     override init() {
-        let config = URLSessionConfiguration.ephemeral
-        config.httpMaximumConnectionsPerHost = 8
-        config.timeoutIntervalForRequest = 30
+        let config = URLSessionConfiguration.default
+        // Default is 4 per host; live IPTV often pulls 6-8 segments in
+        // parallel during ABR ramp-up. 12 gives hls.js plenty of room
+        // without overloading the upstream CDN.
+        config.httpMaximumConnectionsPerHost = 12
+        // Keep-alive: reuse the same TCP/TLS connection across segment
+        // requests. Without this URLSession sometimes opens a fresh
+        // connection per request and each handshake adds ~150 ms.
+        config.httpShouldUsePipelining = true
+        config.urlCache = nil  // hls.js does its own caching
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.waitsForConnectivity = false
+        config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = .infinity  // radio streams never finish
         // We set headers explicitly per request, so suppress URLSession's
         // default UA/Accept headers to avoid surprising upstreams.
         config.httpAdditionalHeaders = [:]
+        if #available(iOS 16.0, *) {
+            // Prefer TLS 1.3 / HTTP/2 wherever the upstream supports it.
+            // URLSession picks the strongest protocol both peers offer.
+            config.tlsMinimumSupportedProtocolVersion = .TLSv12
+        }
         self.delegate = ProxyDelegate()
         self.session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }

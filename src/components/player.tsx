@@ -55,9 +55,28 @@ function configFor(pref: QualityPreference, defaultEstimate: number) {
   const base = {
     abrEwmaDefaultEstimate: defaultEstimate,
     backBufferLength: 30,
-    liveSyncDurationCount: 4,
+    // Live channels start playing once we have this many fragments
+    // buffered. 2 keeps start-up under a second for most IPTV CDNs; 4
+    // added an avoidable ~3 seconds of "Loading..." before first frame.
+    liveSyncDurationCount: 2,
+    liveMaxLatencyDurationCount: 6,
     lowLatencyMode: false,
-    fragLoadingTimeOut: 60_000,
+    // Per-fragment loader timeout. The old 60 s value masked dead streams;
+    // 15 s is long enough for satellite IPTV CDNs and short enough that a
+    // dead segment surfaces an error fast.
+    fragLoadingTimeOut: 15_000,
+    fragLoadingMaxRetry: 4,
+    fragLoadingRetryDelay: 500,
+    manifestLoadingTimeOut: 10_000,
+    manifestLoadingMaxRetry: 2,
+    manifestLoadingRetryDelay: 500,
+    levelLoadingTimeOut: 10_000,
+    levelLoadingMaxRetry: 4,
+    levelLoadingRetryDelay: 500,
+    // Start playback the moment we have enough — don't wait for a full
+    // safety buffer when the user is hitting "channel up".
+    startFragPrefetch: true,
+    testBandwidth: false,
     enableWorker: true,
   };
   if (pref === "best") {

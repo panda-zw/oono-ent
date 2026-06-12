@@ -53,7 +53,7 @@ targets:
           NSAllowsArbitraryLoadsInWebContent: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.oono.ent.ios
+        PRODUCT_BUNDLE_IDENTIFIER: com.panashemapika.oono-ent
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
         SWIFT_OBJC_BRIDGING_HEADER: ""
