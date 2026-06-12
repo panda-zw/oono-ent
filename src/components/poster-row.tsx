@@ -15,6 +15,7 @@ import { api } from "@/api";
 import type { PosterCard } from "@/types";
 import { tmdbImage } from "@/lib/tmdb";
 import { cn } from "@/lib/utils";
+import { useLongPress } from "@/hooks/useLongPress";
 
 export function PosterRow({
   title,
@@ -152,15 +153,13 @@ export function PosterTile({
   });
 
   const open = () => navigate(detailHref);
+  const press = useLongPress((x, y) => setMenu({ x, y }));
 
   return (
     <>
       <div
         onClick={open}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setMenu({ x: e.clientX, y: e.clientY });
-        }}
+        {...press}
         className={cn(
           "group flex cursor-pointer flex-col gap-1.5 text-left",
           fill ? "w-full" : "shrink-0",
