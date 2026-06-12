@@ -3,8 +3,47 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, Star, ChevronLeft, Clock, Bookmark, BookmarkCheck } from "lucide-react";
 import { api } from "@/api";
+import { useAppStore } from "@/store";
 import { tmdbImage } from "@/lib/tmdb";
 import { cn } from "@/lib/utils";
+
+// Once a detail page is open we know exactly which embed URL the user
+// will hit next. Drop a hidden <link rel="prefetch"> for it so the
+// provider's HTML lands in cache before they tap Watch — shaves
+// ~300-800 ms off the first frame.
+function usePrefetchEmbed(
+  kind: "movie" | "tv",
+  tmdbId: number | null,
+  season: number | null,
+  episode: number | null,
+) {
+  const provider = useAppStore((s) => s.vodPlaying?.provider) ?? "vidsrc";
+  useEffect(() => {
+    if (!tmdbId) return;
+    let cancelled = false;
+    api
+      .vodEmbedUrl(provider, kind, tmdbId, season, episode)
+      .then((url) => {
+        if (cancelled || !url) return;
+        const link = document.createElement("link");
+        link.rel = "prefetch";
+        link.href = url;
+        link.crossOrigin = "anonymous";
+        document.head.appendChild(link);
+        // Drop the prefetch hint after 30 s — by then either the user
+        // clicked Watch (cached hit) or moved on (no point hoarding).
+        const t = window.setTimeout(() => link.remove(), 30_000);
+        return () => {
+          window.clearTimeout(t);
+          link.remove();
+        };
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, kind, tmdbId, season, episode]);
+}
 
 export function VodDetailPage({ kind }: { kind: "movie" | "tv" }) {
   const { id } = useParams<{ id: string }>();
@@ -46,6 +85,14 @@ export function VodDetailPage({ kind }: { kind: "movie" | "tv" }) {
     queryFn: () => api.vodEpisodes(tmdbId, season),
     enabled: detail.data?.kind === "tv",
   });
+
+  // Warm the embed provider while the user reads synopsis / picks an episode.
+  usePrefetchEmbed(
+    kind,
+    Number.isFinite(tmdbId) ? tmdbId : null,
+    kind === "tv" ? season : null,
+    kind === "tv" ? 1 : null,
+  );
 
   const d = detail.data;
   if (!d && detail.isLoading) {
