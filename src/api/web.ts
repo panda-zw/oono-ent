@@ -718,7 +718,9 @@ async function healthRecordFail(_channel: string, _url: string): Promise<number>
 
 const RADIO_BASE = "https://de1.api.radio-browser.info/json";
 const RADIO_FAVS_KEY = "radio-favorites";
-const RADIO_CACHE_KEY = "radio-cache";
+// Bumped to v2 when the curated overlay landed — invalidates v1 caches that
+// only had the narrow `bycountrycodeexact/zw?limit=200` snapshot.
+const RADIO_CACHE_KEY = "radio-cache-v2";
 
 type RadioFavSet = Set<string>;
 
@@ -749,6 +751,7 @@ type RawRadioStation = {
 };
 
 function toRadioStation(s: RawRadioStation, favs: RadioFavSet): RadioStation {
+  const extras = s as RawRadioStation & { _curated?: boolean; _referer?: string; _userAgent?: string };
   return {
     uuid: s.stationuuid,
     name: s.name,
@@ -766,18 +769,132 @@ function toRadioStation(s: RawRadioStation, favs: RadioFavSet): RadioStation {
     last_check_ok: Boolean(s.lastcheckok),
     click_count: s.clickcount ?? 0,
     favorite: favs.has(s.stationuuid),
-    curated: false,
-    referer: null,
-    user_agent: null,
+    curated: Boolean(extras._curated),
+    referer: extras._referer ?? null,
+    user_agent: extras._userAgent ?? null,
+  };
+}
+
+// Curated Zimbabwean stations — mirrors src-tauri/src/radio.rs::ZW_CURATED.
+// These include ZBC direct streams + Zeno.fm/iono.fm endpoints that
+// radio-browser either doesn't list or lists with stale URLs.
+type Curated = {
+  name: string;
+  directUrl?: string;
+  nameQuery?: string;
+  homepage?: string;
+  tags: string;
+  referer?: string;
+  userAgent?: string;
+};
+
+const ZW_CURATED: Curated[] = [
+  { name: "Radio Zimbabwe", directUrl: "https://mainradiostreaming.zbc.co.zw:8040/nhepfenuro.mp3", nameQuery: "Radio Zimbabwe", homepage: "https://www.radiozim.co.zw", tags: "zimbabwe,zbc,shona,ndebele" },
+  { name: "Power FM Zimbabwe", directUrl: "https://mainradiostreaming.zbc.co.zw:8000/radio.mp3", nameQuery: "Power FM Zimbabwe", homepage: "https://www.powerfm.co.zw", tags: "zimbabwe,zbc,urban,harare" },
+  { name: "National FM", directUrl: "https://mainradiostreaming.zbc.co.zw:8020/national.mp3", nameQuery: "National FM Zimbabwe", homepage: "https://nationalfm.co.zw", tags: "zimbabwe,zbc,indigenous" },
+  { name: "Classic 263", directUrl: "https://mainradiostreaming.zbc.co.zw:8030/radio.mp3", nameQuery: "Classic 263", homepage: "https://classic263.co.zw", tags: "zimbabwe,classic,music,harare" },
+  { name: "Khulumani FM", directUrl: "https://khulumanistream.zbc.co.zw:8000/radio.mp3", nameQuery: "Khulumani", homepage: "https://www.khulumanifm.co.zw", tags: "zimbabwe,zbc,bulawayo" },
+  { name: "Star FM Zimbabwe", nameQuery: "Star FM Zimbabwe", homepage: "https://starfm.co.zw", tags: "zimbabwe,star,89.7" },
+  { name: "ZiFM Stereo", directUrl: "https://edge.iono.fm/xice/134_medium.aac", nameQuery: "ZiFM", homepage: "https://zifmstereo.co.zw", tags: "zimbabwe,commercial,harare,iono" },
+  { name: "Capitalk 100.4 FM", nameQuery: "Capitalk", homepage: "https://capitalkfm.co.zw", tags: "zimbabwe,harare,talk" },
+  { name: "Diamond FM", directUrl: "https://edge.iono.fm/xice/160_medium.aac", nameQuery: "Diamond FM", homepage: "https://diamondfm.co.zw", tags: "zimbabwe,mutare,manicaland,iono" },
+  { name: "Skyz Metro FM", directUrl: "https://stream.zeno.fm/2634b6n4qy8uv", nameQuery: "Skyz Metro", homepage: "https://skyzmetroradio.co.zw", tags: "zimbabwe,bulawayo,zeno", referer: "https://zeno.fm/", userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15" },
+  { name: "98.4 Midlands FM", nameQuery: "984 Midlands FM", homepage: "https://984midlands.co.zw", tags: "zimbabwe,midlands,gweru" },
+  { name: "Breeze FM", nameQuery: "Breeze FM", homepage: "https://breezefm.co.zw", tags: "zimbabwe,victoria falls" },
+  { name: "YA FM", nameQuery: "YA FM", homepage: "https://yafm.co.zw", tags: "zimbabwe,zvishavane" },
+  { name: "Nehanda Radio", nameQuery: "Nehanda Radio", tags: "zimbabwe,diaspora,news" },
+  { name: "ZimGospel Masters Radio", directUrl: "https://stream.zeno.fm/uqmr572cqrhvv", homepage: "https://zenoradio.com/station/uqmr572cqrhvv", tags: "zimbabwe,gospel,zeno", referer: "https://zeno.fm/", userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15" },
+];
+
+function looksZimbabwean(s: RawRadioStation & { countrycode?: string; country?: string }): boolean {
+  const cc = (s.countrycode ?? "").toUpperCase();
+  if (cc === "ZW") return true;
+  return (s.country ?? "").toLowerCase().includes("zimbabwe");
+}
+
+function synthesizeCurated(c: Curated): RawRadioStation {
+  // Deterministic UUID-shaped id derived from the name so subsequent
+  // refreshes overwrite the same record (favourites survive).
+  let h = 0;
+  for (let i = 0; i < c.name.length; i++) h = ((h << 5) - h + c.name.charCodeAt(i)) >>> 0;
+  const stationuuid = `curated-${h.toString(16).padStart(16, "0")}`;
+  return {
+    stationuuid,
+    name: c.name,
+    url: c.directUrl ?? c.homepage ?? "",
+    url_resolved: c.directUrl,
+    homepage: c.homepage,
+    favicon: undefined,
+    country: "Zimbabwe",
+    state: undefined,
+    language: undefined,
+    tags: c.tags,
+    codec: undefined,
+    bitrate: undefined,
+    hls: false,
+    lastcheckok: c.directUrl ? 1 : 0,
+    clickcount: 9999,
   };
 }
 
 async function radioRefresh(): Promise<number> {
-  const r = await fetch(`${RADIO_BASE}/stations/bycountrycodeexact/zw?hidebroken=true&order=clickcount&reverse=true&limit=200`);
-  if (!r.ok) throw new Error(`radio-browser ${r.status}`);
-  const raw = (await r.json()) as RawRadioStation[];
-  lsSet(RADIO_CACHE_KEY, raw);
-  return raw.length;
+  // 1) Broad radio-browser sweep — search by country name, not just code,
+  // so diaspora-tagged and mis-coded stations come through too.
+  const merged = new Map<string, RawRadioStation>();
+  try {
+    const r = await fetch(
+      `${RADIO_BASE}/stations/search?country=Zimbabwe&hidebroken=true&order=clickcount&reverse=true&limit=400`,
+    );
+    if (r.ok) {
+      const list = (await r.json()) as (RawRadioStation & { countrycode?: string })[];
+      for (const s of list) {
+        if (!looksZimbabwean(s)) continue;
+        merged.set(s.stationuuid, s);
+      }
+    }
+  } catch {
+    // ignore — curated overlay still gives the user something
+  }
+
+  // 2) Curated overlay. For entries with name_query, try to enrich with
+  // radio-browser metadata (bitrate/codec/clickcount) — fall back to a
+  // synthesised record so the station always appears in the list.
+  for (const c of ZW_CURATED) {
+    let enriched: RawRadioStation | null = null;
+    if (c.nameQuery) {
+      try {
+        const r = await fetch(
+          `${RADIO_BASE}/stations/byname/${encodeURIComponent(c.nameQuery)}?hidebroken=true&limit=10`,
+        );
+        if (r.ok) {
+          const candidates = (await r.json()) as (RawRadioStation & { countrycode?: string })[];
+          enriched =
+            candidates
+              .filter((s) => looksZimbabwean(s) && (s.lastcheckok ?? 0) === 1)
+              .sort((a, b) => (b.clickcount ?? 0) - (a.clickcount ?? 0))[0] ?? null;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    const merged_in = enriched ?? synthesizeCurated(c);
+    // For curated entries with a direct URL override, prefer it over
+    // radio-browser's URL (often stale).
+    if (c.directUrl) {
+      merged_in.url = c.directUrl;
+      merged_in.url_resolved = c.directUrl;
+      merged_in.lastcheckok = 1;
+    }
+    // Mark via a sentinel so list() can sort + flag the station as curated.
+    (merged_in as RawRadioStation & { _curated?: true; _referer?: string; _userAgent?: string })._curated = true;
+    if (c.referer) (merged_in as { _referer?: string })._referer = c.referer;
+    if (c.userAgent) (merged_in as { _userAgent?: string })._userAgent = c.userAgent;
+    merged.set(merged_in.stationuuid, merged_in);
+  }
+
+  const final = Array.from(merged.values());
+  lsSet(RADIO_CACHE_KEY, final);
+  return final.length;
 }
 
 async function radioList(search?: string | null): Promise<RadioStation[]> {
@@ -792,7 +909,13 @@ async function radioList(search?: string | null): Promise<RadioStation[]> {
     const q = search.toLowerCase();
     list = list.filter((s) => s.name.toLowerCase().includes(q) || s.tags.some((t) => t.toLowerCase().includes(q)));
   }
-  list.sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.click_count - a.click_count);
+  list.sort(
+    (a, b) =>
+      Number(b.favorite) - Number(a.favorite) ||
+      Number(b.curated) - Number(a.curated) ||
+      Number(b.last_check_ok) - Number(a.last_check_ok) ||
+      b.click_count - a.click_count,
+  );
   return list;
 }
 

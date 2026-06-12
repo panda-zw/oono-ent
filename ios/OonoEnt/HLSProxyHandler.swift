@@ -10,26 +10,25 @@ import WebKit
 ///   2. If the response is an m3u8 manifest, rewrites every segment / variant
 ///      line to point back through this scheme so headers persist down the
 ///      whole playlist tree.
-///   3. Streams everything else through verbatim.
+///   3. Streams everything else through chunk-by-chunk — critical for the
+///      infinite radio streams (Zeno.fm, iono.fm) and large HLS segments.
 ///
 /// The scheme is registered in `WebViewContainer` via
 /// `config.setURLSchemeHandler(_:forURLScheme:)`.
 final class HLSProxyHandler: NSObject, WKURLSchemeHandler {
     private let session: URLSession
-    private let queue = DispatchQueue(label: "oono.hls.proxy", qos: .userInitiated, attributes: .concurrent)
-    private var inflight: [ObjectIdentifier: URLSessionDataTask] = [:]
-    private let inflightLock = NSLock()
+    private let delegate: ProxyDelegate
 
     override init() {
         let config = URLSessionConfiguration.ephemeral
         config.httpMaximumConnectionsPerHost = 8
         config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 120
+        config.timeoutIntervalForResource = .infinity  // radio streams never finish
         // We set headers explicitly per request, so suppress URLSession's
         // default UA/Accept headers to avoid surprising upstreams.
         config.httpAdditionalHeaders = [:]
-        self.session = URLSession(configuration: config)
-        super.init()
+        self.delegate = ProxyDelegate()
+        self.session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }
 
     func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
@@ -51,63 +50,19 @@ final class HLSProxyHandler: NSObject, WKURLSchemeHandler {
         }
         upstream.setValue("*/*", forHTTPHeaderField: "Accept")
 
-        let taskId = ObjectIdentifier(urlSchemeTask)
-        let task = session.dataTask(with: upstream) { [weak self] data, response, error in
-            guard let self else { return }
-            self.complete(taskId: taskId)
-
-            if let error {
-                self.fail(urlSchemeTask, error: error)
-                return
-            }
-            guard let http = response as? HTTPURLResponse, let data else {
-                self.fail(urlSchemeTask, error: NSError(
-                    domain: "OonoHLS", code: 502,
-                    userInfo: [NSLocalizedDescriptionKey: "Empty upstream response"]
-                ))
-                return
-            }
-
-            let contentType = (http.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream").lowercased()
-            let looksLikeManifest = request.target.absoluteString.hasSuffix(".m3u8")
-                || contentType.contains("mpegurl")
-                || contentType.contains("m3u8")
-
-            if looksLikeManifest {
-                let rewritten = self.rewriteManifest(
-                    body: data,
-                    upstream: request.target,
-                    referer: request.referer,
-                    userAgent: request.userAgent
-                )
-                self.send(
-                    task: urlSchemeTask,
-                    status: http.statusCode,
-                    contentType: "application/vnd.apple.mpegurl",
-                    body: rewritten.data(using: .utf8) ?? Data()
-                )
-            } else {
-                self.send(
-                    task: urlSchemeTask,
-                    status: http.statusCode,
-                    contentType: http.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream",
-                    body: data
-                )
-            }
-        }
-
-        inflightLock.lock()
-        inflight[taskId] = task
-        inflightLock.unlock()
+        let task = session.dataTask(with: upstream)
+        let isManifest = request.target.absoluteString.hasSuffix(".m3u8")
+        delegate.register(
+            task: task,
+            schemeTask: urlSchemeTask,
+            isManifest: isManifest,
+            upstream: (target: request.target, referer: request.referer, userAgent: request.userAgent),
+        )
         task.resume()
     }
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {
-        let taskId = ObjectIdentifier(urlSchemeTask)
-        inflightLock.lock()
-        let task = inflight.removeValue(forKey: taskId)
-        inflightLock.unlock()
-        task?.cancel()
+        delegate.cancel(schemeTask: urlSchemeTask)
     }
 
     // MARK: - Helpers
@@ -135,39 +90,140 @@ final class HLSProxyHandler: NSObject, WKURLSchemeHandler {
         guard let raw = u, let target = URL(string: raw) else { return nil }
         return ProxyRequest(target: target, referer: r, userAgent: ua)
     }
+}
 
-    private func send(task: any WKURLSchemeTask, status: Int, contentType: String, body: Data) {
-        guard let url = task.request.url else { return }
-        let headers: [String: String] = [
-            "Content-Type": contentType,
-            "Content-Length": "\(body.count)",
-            "Cache-Control": "no-cache",
-            "Access-Control-Allow-Origin": "*",
-        ]
-        if let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers) {
-            task.didReceive(response)
-            task.didReceive(body)
-            task.didFinish()
-        } else {
-            task.didFailWithError(NSError(domain: "OonoHLS", code: 500))
+/// URLSession delegate that fans out streaming bytes to the matching
+/// WKURLSchemeTask. We can't directly forward the chunks from a dataTask
+/// completion handler because that buffers the whole body — for infinite
+/// radio streams, the completion never fires.
+private final class ProxyDelegate: NSObject, URLSessionDataDelegate {
+    private struct Entry {
+        let schemeTask: any WKURLSchemeTask
+        let isManifest: Bool
+        let upstream: URL
+        let referer: String?
+        let userAgent: String?
+        // Manifests need to be buffered + rewritten before the body is
+        // delivered. For pass-through bodies we deliver chunks live.
+        var buffer: Data
+        var didSendResponse: Bool
+        var cancelled: Bool
+    }
+
+    private let queue = DispatchQueue(label: "oono.hls.proxy.delegate")
+    private var entries: [Int: Entry] = [:]
+
+    func register(
+        task: URLSessionDataTask,
+        schemeTask: any WKURLSchemeTask,
+        isManifest: Bool,
+        upstream: (target: URL, referer: String?, userAgent: String?)
+    ) {
+        queue.sync {
+            entries[task.taskIdentifier] = Entry(
+                schemeTask: schemeTask,
+                isManifest: isManifest,
+                upstream: upstream.target,
+                referer: upstream.referer,
+                userAgent: upstream.userAgent,
+                buffer: Data(),
+                didSendResponse: false,
+                cancelled: false,
+            )
         }
     }
 
-    private func fail(_ task: any WKURLSchemeTask, error: Error) {
-        task.didFailWithError(error)
+    func cancel(schemeTask: any WKURLSchemeTask) {
+        queue.sync {
+            for (id, entry) in entries where ObjectIdentifier(entry.schemeTask as AnyObject) == ObjectIdentifier(schemeTask as AnyObject) {
+                entries[id]?.cancelled = true
+            }
+        }
     }
 
-    private func complete(taskId: ObjectIdentifier) {
-        inflightLock.lock()
-        inflight.removeValue(forKey: taskId)
-        inflightLock.unlock()
+    // MARK: URLSessionDataDelegate
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        completionHandler(.allow)
+        guard let http = response as? HTTPURLResponse else { return }
+        queue.sync {
+            guard var entry = entries[dataTask.taskIdentifier], !entry.cancelled else { return }
+            if entry.isManifest {
+                // Defer sending the response until we've rewritten the body.
+                return
+            }
+            let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
+            let headers: [String: String] = [
+                "Content-Type": contentType,
+                "Cache-Control": "no-cache",
+                "Access-Control-Allow-Origin": "*",
+            ]
+            if let rewritten = HTTPURLResponse(
+                url: entry.schemeTask.request.url ?? entry.upstream,
+                statusCode: http.statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: headers,
+            ) {
+                entry.schemeTask.didReceive(rewritten)
+                entry.didSendResponse = true
+                entries[dataTask.taskIdentifier] = entry
+            }
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        queue.sync {
+            guard var entry = entries[dataTask.taskIdentifier], !entry.cancelled else { return }
+            if entry.isManifest {
+                entry.buffer.append(data)
+                entries[dataTask.taskIdentifier] = entry
+                return
+            }
+            entry.schemeTask.didReceive(data)
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        queue.sync {
+            guard var entry = entries.removeValue(forKey: task.taskIdentifier) else { return }
+            if entry.cancelled { return }
+            if let error {
+                entry.schemeTask.didFailWithError(error)
+                return
+            }
+            if entry.isManifest {
+                let rewritten = rewriteManifest(
+                    body: entry.buffer,
+                    upstream: entry.upstream,
+                    referer: entry.referer,
+                    userAgent: entry.userAgent,
+                )
+                let body = rewritten.data(using: .utf8) ?? Data()
+                let headers = [
+                    "Content-Type": "application/vnd.apple.mpegurl",
+                    "Content-Length": "\(body.count)",
+                    "Cache-Control": "no-cache",
+                    "Access-Control-Allow-Origin": "*",
+                ]
+                if let response = HTTPURLResponse(
+                    url: entry.schemeTask.request.url ?? entry.upstream,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: headers,
+                ) {
+                    entry.schemeTask.didReceive(response)
+                    entry.schemeTask.didReceive(body)
+                }
+            }
+            entry.schemeTask.didFinish()
+        }
     }
 
     private func rewriteManifest(
         body: Data,
         upstream: URL,
         referer: String?,
-        userAgent: String?
+        userAgent: String?,
     ) -> String {
         let text = String(data: body, encoding: .utf8) ?? ""
         var out = ""
