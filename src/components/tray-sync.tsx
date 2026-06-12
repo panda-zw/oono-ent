@@ -28,6 +28,11 @@ import { api } from "@/api";
 import { useAppStore } from "@/store";
 import type { EnginePhase } from "@/types";
 
+// The system tray only exists in the Tauri desktop build. In the iPad
+// WKWebView build there's no tray, no IPC, and calling `invoke` /
+// `listen` would just spam errors — bail out early.
+const HAS_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
 type TrayState = {
   now_playing_title: string | null;
   now_playing_subtitle: string | null;
@@ -74,17 +79,20 @@ export function TraySync() {
     queryKey: ["engine", "runtime"],
     queryFn: api.engineRuntimeStatus,
     refetchInterval: 5_000,
+    enabled: HAS_TAURI,
   });
   const ace = useQuery({
     queryKey: ["acestream", "status"],
     queryFn: api.acestreamStatus,
     refetchInterval: 30_000,
+    enabled: HAS_TAURI,
   });
 
   // Push state to the tray whenever anything user-visible changes. We
   // pick the "primary" media in priority order: live TV > VOD > radio,
   // matching what the player UI shows on screen.
   useEffect(() => {
+    if (!HAS_TAURI) return;
     let title: string | null = null;
     let subtitle: string | null = null;
     let kind: string | null = null;
@@ -142,6 +150,7 @@ export function TraySync() {
 
   // Tray menu click handler: actions the Rust side forwards back to us.
   useEffect(() => {
+    if (!HAS_TAURI) return;
     let unlisten: (() => void) | null = null;
     listen<string>("tray-action", (e) => {
       const action = e.payload;
