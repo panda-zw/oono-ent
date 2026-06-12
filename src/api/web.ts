@@ -72,8 +72,13 @@ function lsSet(key: string, value: unknown): void {
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
 
+// Build-time fallback so iPad sideload builds can ship a baked-in key
+// (see vite.config.ios.ts + .env.local). Falls back to "" when not set;
+// localStorage always wins so the user can override at runtime.
+declare const __OONO_DEFAULT_TMDB_KEY__: string;
+
 function getTmdbKey(): string {
-  const key = lsGet<string>("tmdb-key");
+  const key = lsGet<string>("tmdb-key") || __OONO_DEFAULT_TMDB_KEY__;
   if (!key) throw new Error("Add a TMDb API key in Settings to browse movies and series");
   return key;
 }
@@ -855,7 +860,8 @@ export const webApi = {
   vodSetApiKey: async (key: string) => {
     lsSet("tmdb-key", key);
   },
-  vodHasApiKey: async () => Boolean(lsGet<string>("tmdb-key")),
+  vodHasApiKey: async () =>
+    Boolean(lsGet<string>("tmdb-key") || __OONO_DEFAULT_TMDB_KEY__),
   vodBrowse,
   vodSearch,
   vodPerson,

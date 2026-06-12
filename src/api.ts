@@ -13,4 +13,7 @@ import { webApi } from "./api/web";
 
 declare const __OONO_PLATFORM__: "tauri" | "web";
 
-export const api = __OONO_PLATFORM__ === "web" ? webApi : tauriApi;
+export const PLATFORM: "tauri" | "web" = __OONO_PLATFORM__;
+export const IS_WEB = PLATFORM === "web";
+
+export const api = IS_WEB ? webApi : tauriApi;

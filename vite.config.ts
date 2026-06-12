@@ -16,6 +16,7 @@ export default defineConfig(async () => ({
   },
   define: {
     __OONO_PLATFORM__: JSON.stringify("tauri"),
+    __OONO_DEFAULT_TMDB_KEY__: JSON.stringify(""),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
