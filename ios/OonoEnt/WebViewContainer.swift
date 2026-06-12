@@ -25,9 +25,13 @@ struct WebViewContainer: UIViewRepresentable {
         let config = WKWebViewConfiguration()
 
         // Inline playback + autoplay so the persistent player and radio work
-        // without forcing fullscreen.
+        // without forcing fullscreen. `allowsPictureInPictureMediaPlayback`
+        // is what lets iOS auto-PiP an active <video> when the user swipes
+        // the app to background; combined with AVAudioSession `.playback`
+        // (see AudioSessionManager) audio continues too.
         config.allowsInlineMediaPlayback = true
         config.allowsPictureInPictureMediaPlayback = true
+        config.allowsAirPlayForMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.suppressesIncrementalRendering = false
 

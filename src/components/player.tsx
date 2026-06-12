@@ -1019,6 +1019,10 @@ export function Player({
         className="h-full w-full bg-black"
         playsInline
         preload="auto"
+        // iPad WKWebView auto-PiPs an inline <video> on background only
+        // when these attributes are set. React's typings don't expose
+        // `autopictureinpicture` yet, so spread it in untyped.
+        {...({ autopictureinpicture: "", "x-webkit-airplay": "allow" } as Record<string, string>)}
       />
 
       {channel && (
