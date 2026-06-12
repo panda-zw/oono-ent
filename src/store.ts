@@ -21,6 +21,9 @@ type AppStore = {
 
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (b: boolean) => void;
+  toggleSidebar: () => void;
   playerWidth: number;
   setPlayerWidth: (w: number) => void;
 
@@ -72,6 +75,10 @@ export const useAppStore = create<AppStore>()(
 
       sidebarWidth: 240,
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+      sidebarCollapsed: false,
+      setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+      toggleSidebar: () =>
+        set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       playerWidth: 640,
       setPlayerWidth: (playerWidth) => set({ playerWidth }),
 
@@ -94,6 +101,7 @@ export const useAppStore = create<AppStore>()(
       partialize: (s) => ({
         recents: s.recents,
         sidebarWidth: s.sidebarWidth,
+        sidebarCollapsed: s.sidebarCollapsed,
         playerWidth: s.playerWidth,
         viewMode: s.viewMode,
         qualityPreference: s.qualityPreference,

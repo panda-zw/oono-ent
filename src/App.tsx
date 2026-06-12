@@ -29,6 +29,7 @@ export default function App() {
   const setViewMode = useAppStore((s) => s.setViewMode);
   const sidebarWidth = useAppStore((s) => s.sidebarWidth);
   const setSidebarWidth = useAppStore((s) => s.setSidebarWidth);
+  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const playerWidth = useAppStore((s) => s.playerWidth);
   const setPlayerWidth = useAppStore((s) => s.setPlayerWidth);
   const location = useLocation();
@@ -55,15 +56,17 @@ export default function App() {
       <Spotlight />
       <div className={inTheater ? "hidden" : "contents"}>
         <Sidebar width={sidebarWidth} />
-        <ResizeHandle
-          side="right"
-          min={200}
-          max={360}
-          value={sidebarWidth}
-          onChange={setSidebarWidth}
-        />
+        {!sidebarCollapsed && (
+          <ResizeHandle
+            side="right"
+            min={200}
+            max={360}
+            value={sidebarWidth}
+            onChange={setSidebarWidth}
+          />
+        )}
       </div>
-      <main className="relative z-10 flex min-w-0 flex-1 gap-2 p-3">
+      <main className="pt-safe pb-safe pr-safe relative z-10 flex min-w-0 flex-1 gap-2 p-3">
         <div
           className={
             inTheater ? "hidden" : "flex min-w-0 flex-1 flex-col"
