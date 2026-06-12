@@ -256,7 +256,7 @@ export function VodPersistent() {
         "fixed z-50 flex flex-col overflow-hidden bg-black",
         expanded
           ? "inset-0"
-          : "bottom-4 right-4 w-105 rounded-xl border border-white/10 shadow-2xl",
+          : "bottom-safe right-safe w-105 rounded-xl border border-white/10 shadow-2xl",
       )}
     >
       {expanded ? (

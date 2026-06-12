@@ -64,7 +64,7 @@ export function RadioPlayer() {
   };
 
   return (
-    <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-neutral-950/90 backdrop-blur-xl">
+    <div className="pb-safe pointer-events-auto fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-neutral-950/90 backdrop-blur-xl">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 p-3">
         <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/10">
           {station.favicon ? (
