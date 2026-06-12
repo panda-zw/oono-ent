@@ -82,7 +82,7 @@ export function Sidebar({ width }: { width: number }) {
 
   return (
     <aside
-      className="pt-safe pb-safe pl-safe flex h-full shrink-0 flex-col gap-4 border-r border-white/10 bg-white/5 p-4 backdrop-blur-2xl"
+      className="pt-safe-4 pb-safe-4 pl-safe-4 flex h-full shrink-0 flex-col gap-4 border-r border-white/10 bg-white/5 py-4 pr-4 backdrop-blur-2xl"
       style={{ width: effectiveWidth }}
     >
       <div

@@ -256,11 +256,11 @@ export function VodPersistent() {
         "fixed z-50 flex flex-col overflow-hidden bg-black",
         expanded
           ? "inset-0"
-          : "bottom-safe right-safe w-105 rounded-xl border border-white/10 shadow-2xl",
+          : "bottom-safe-4 right-safe-4 w-105 rounded-xl border border-white/10 shadow-2xl",
       )}
     >
       {expanded ? (
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 bg-black/40 p-3">
+        <header className="pt-safe-3 pl-safe-3 pr-safe-3 flex flex-wrap items-center justify-between gap-3 border-b border-white/5 bg-black/40 pb-3">
           <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={() => navigate(-1)}

@@ -66,7 +66,7 @@ export default function App() {
           />
         )}
       </div>
-      <main className="pt-safe pb-safe pr-safe relative z-10 flex min-w-0 flex-1 gap-2 p-3">
+      <main className="pt-safe-0 pb-safe-0 pr-safe-0 relative z-10 flex min-w-0 flex-1 gap-2">
         <div
           className={
             inTheater ? "hidden" : "flex min-w-0 flex-1 flex-col"
