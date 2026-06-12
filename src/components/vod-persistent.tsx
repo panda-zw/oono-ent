@@ -9,6 +9,7 @@ import {
   Minimize2,
   Minus,
   PictureInPicture2,
+  SkipBack,
   SkipForward,
   X,
 } from "lucide-react";
@@ -90,6 +91,15 @@ export function VodPersistent() {
     return (
       episodes.data.find((e) => e.episode_number === (vodPlaying.episode ?? 0) + 1) ??
       null
+    );
+  }, [episodes.data, vodPlaying]);
+
+  const prevEpisode = useMemo(() => {
+    if (!vodPlaying || vodPlaying.kind !== "tv" || !episodes.data) return null;
+    const current = vodPlaying.episode ?? 0;
+    if (current <= 1) return null;
+    return (
+      episodes.data.find((e) => e.episode_number === current - 1) ?? null
     );
   }, [episodes.data, vodPlaying]);
 
@@ -181,6 +191,22 @@ export function VodPersistent() {
     if (isWatch) {
       navigate(
         `/watch/tv/${vodPlaying.tmdbId}?s=${vodPlaying.season}&e=${nextEpisode.episode_number}`,
+        { replace: true },
+      );
+    }
+  };
+
+  const playPrev = () => {
+    if (!vodPlaying || !prevEpisode) return;
+    setShowUpNext(false);
+    setVodPlaying({
+      ...vodPlaying,
+      episode: prevEpisode.episode_number,
+      runtimeMin: prevEpisode.runtime ?? vodPlaying.runtimeMin,
+    });
+    if (isWatch) {
+      navigate(
+        `/watch/tv/${vodPlaying.tmdbId}?s=${vodPlaying.season}&e=${prevEpisode.episode_number}`,
         { replace: true },
       );
     }
@@ -293,6 +319,16 @@ export function VodPersistent() {
                 </button>
               ))}
             </div>
+            {prevEpisode && (
+              <button
+                onClick={playPrev}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1 text-xs text-white/80 hover:bg-white/15"
+                title={`Previous: ${prevEpisode.name}`}
+              >
+                <SkipBack className="size-3.5" />
+                Prev ep
+              </button>
+            )}
             {nextEpisode && (
               <button
                 onClick={playNext}
