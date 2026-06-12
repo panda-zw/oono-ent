@@ -1,8 +1,24 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, Compass, Star, Settings, Radio, Film, MonitorPlay, Bookmark, Zap, RadioTower } from "lucide-react";
+import {
+  Home,
+  Compass,
+  Star,
+  Settings,
+  Radio,
+  Film,
+  MonitorPlay,
+  Bookmark,
+  Zap,
+  RadioTower,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
+import { IS_WEB } from "@/api";
 import type { ChannelRow } from "@/types";
+
+const COLLAPSED_WIDTH = 68;
 
 type SidebarLink = {
   to: string;
@@ -27,7 +43,9 @@ const links: SidebarLink[] = [
     exact: true,
     match: (p) => p === "/browse" || p.startsWith("/browse?"),
   },
-  { to: "/acestream", label: "Live sports", icon: Zap },
+  // Live sports rides on the bundled Linux VM (Apple Virtualization
+  // Framework) and is desktop-only. Filtered out for the iPad build.
+  ...(IS_WEB ? [] : [{ to: "/acestream", label: "Live sports", icon: Zap }]),
   {
     to: "/movies",
     label: "Movies",
@@ -56,29 +74,51 @@ export function Sidebar({ width }: { width: number }) {
   const recents = useAppStore((s) => s.recents);
   const current = useAppStore((s) => s.current);
   const setCurrent = useAppStore((s) => s.setCurrent);
+  const collapsed = useAppStore((s) => s.sidebarCollapsed);
+  const toggle = useAppStore((s) => s.toggleSidebar);
   const location = useLocation();
+
+  const effectiveWidth = collapsed ? COLLAPSED_WIDTH : width;
 
   return (
     <aside
-      className="flex h-full shrink-0 flex-col gap-4 border-r border-white/10 bg-white/5 p-4 backdrop-blur-2xl"
-      style={{ width }}
+      className="pt-safe pb-safe pl-safe flex h-full shrink-0 flex-col gap-4 border-r border-white/10 bg-white/5 p-4 backdrop-blur-2xl"
+      style={{ width: effectiveWidth }}
     >
-      <div className="flex items-center gap-2 px-1">
-        <img
-          src="/icon.png"
-          alt="Oono"
-          className="size-9 rounded-xl object-contain"
-        />
-        <div>
-          <div className="text-lg font-semibold">Oono Ent</div>
-          <div className="text-xs text-white/50">Free entertainment</div>
+      <div
+        className={cn(
+          "flex items-center px-1",
+          collapsed ? "flex-col gap-2" : "justify-between gap-2",
+        )}
+      >
+        <div className={cn("flex min-w-0 items-center gap-2", collapsed && "flex-col")}>
+          <img
+            src="/icon.png"
+            alt="Oono"
+            className="size-9 shrink-0 rounded-xl object-contain"
+          />
+          {!collapsed && (
+            <div className="min-w-0">
+              <div className="truncate text-lg font-semibold">Oono Ent</div>
+              <div className="truncate text-xs text-white/50">Free entertainment</div>
+            </div>
+          )}
         </div>
+        <button
+          onClick={toggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="rounded-lg p-1.5 text-white/60 hover:bg-white/10 hover:text-white"
+        >
+          {collapsed ? (
+            <PanelLeftOpen className="size-4" />
+          ) : (
+            <PanelLeftClose className="size-4" />
+          )}
+        </button>
       </div>
 
       <nav className="flex flex-col gap-1">
         {links.map((l) => {
-          // Compute active state ourselves so we can support cross-route
-          // highlighting (e.g. "Movies" lights up for /browse/movie).
           const active = l.match
             ? l.match(location.pathname)
             : l.exact
@@ -89,21 +129,25 @@ export function Sidebar({ width }: { width: number }) {
               key={l.to}
               to={l.to}
               end={l.exact}
+              title={collapsed ? l.label : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors",
+                "flex items-center rounded-xl text-sm transition-colors",
+                collapsed
+                  ? "justify-center px-2 py-2"
+                  : "gap-3 px-3 py-2",
                 active
                   ? "bg-cyan-300/15 text-cyan-100"
                   : "text-white/70 hover:bg-white/10 hover:text-white",
               )}
             >
               <l.icon className="size-4" />
-              {l.label}
+              {!collapsed && l.label}
             </NavLink>
           );
         })}
       </nav>
 
-      {recents.length > 0 && (
+      {!collapsed && recents.length > 0 && (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-2 px-2 text-xs font-medium text-white/50">
             Recently watched
